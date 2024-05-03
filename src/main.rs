@@ -89,8 +89,8 @@ fn ad_smooth(mut left: f32, mut right: f32, mut cent: f32) -> (f32, f32 ,f32) {
 }
 
 fn ad_smooth_stencil<const N: usize>(f: &mut State<N>) {
-    (f[N - 1], f[0], f[N - 1]) = ad_smooth(f[N - 2], f[0], f[N - 1]);
-    for i in N-2..=1 {
+    (f[N - 2], f[0], f[N - 1]) = ad_smooth(f[N - 2], f[0], f[N - 1]);
+    for i in (1..=N-2).rev() {
         (f[i - 1], f[i + 1], f[i]) = ad_smooth(f[i - 1], f[i + 1], f[i]);
     }
     (f[N - 1], f[1], f[0]) = ad_smooth(f[N - 1], f[1], f[0]);
@@ -138,7 +138,7 @@ mod test {
         println!("AD_SMOOTH: {:?}, AD_LINEAR {:?}", ad_stencil_result, stencil_state);
 
         test_adjoint("smooth_stencil", smooth_stencil, ad_smooth_stencil,
-                     State::new([0.2, 0.5, 0.6, 1.3], None));
+                     State::new([0.2, 0.5, 0.6, 1.3, 2.3], None));
     }
 
 }
