@@ -67,6 +67,26 @@ fn ad_linear_weight(s: &mut State<5>) {
 
 // ---- STENCILS
 
+fn apply_stencil_one<const N: usize>(f: &mut State<N>, func: impl Fn(f32, f32) -> f32) {
+    let mut copy = f.clone();
+    // Edge case
+    copy[0] = func(f[N - 1], f[1]);
+    for i in 1..=N-2 {
+        copy[i] = func(f[i - 1], f[i + 1]);
+    }
+    copy[N - 1] = func(f[N - 2], f[0]);
+    *f = copy;
+}
+
+fn ad_apply_stencil_one<const N: usize>(f: &mut State<N>, ad_func: impl Fn(f32, f32, f32) -> (f32, f32 ,f32)) {
+    (f[N - 2], f[0], f[N - 1]) = ad_func(f[N - 2], f[0], f[N - 1]);
+    for i in (1..=N-2).rev() {
+        (f[i - 1], f[i + 1], f[i]) = ad_func(f[i - 1], f[i + 1], f[i]);
+    }
+    (f[N - 1], f[1], f[0]) = ad_func(f[N - 1], f[1], f[0]);
+}
+
+
 // Goes around the loop, smoothing. f[i] = f[i - 1] + f[i + 1] / 2.
 fn smooth(left: f32, right: f32) -> f32 {
     left * 0.5 + right * 0.5
@@ -74,14 +94,7 @@ fn smooth(left: f32, right: f32) -> f32 {
 
 // Stencil size of 1.
 fn smooth_stencil<const N: usize>(f: &mut State<N>) {
-    let mut copy = f.clone();
-    // Edge case
-    copy[0] = smooth(f[N - 1], f[1]);
-    for i in 1..=N-2 {
-        copy[i] = smooth(f[i - 1], f[i + 1]);
-    }
-    copy[N - 1] = smooth(f[N - 2], f[0]);
-    *f = copy;
+    apply_stencil_one(f, smooth)
 }
 
 // NOTE: Same as linear weighting adjoint.
@@ -100,10 +113,25 @@ fn ad_smooth_stencil_primal<const N: usize>(f: &mut State<N>) {
     }
     (f[N - 1], f[1], f[0]) = ad_smooth(f[N - 1], f[1], f[0]);
     */
-    /// In this case, the code forms a symmetric matrix and so the adjoint is the same as the TL.
+    // In this case, the code forms a symmetric matrix and so the adjoint is the same as the TL.
     smooth_stencil(f)
 }
 
+fn weight_stencil<const N: usize>(f: &mut State<N>, a: f32, b: f32) {
+    apply_stencil_one(f,
+                      |left, right| -> f32 {
+                          left * a + right * b
+                      });
+}
+
+fn ad_weight_stencil<const N: usize>(f: &mut State<N>, a: f32, b: f32) {
+    ad_apply_stencil_one(f,
+                         |mut left, mut right, centre| -> (f32, f32, f32) {
+                            left = left + a * centre;
+                            right = right + b * centre;
+                            (left, right, 0.0)
+                         });
+}
 
 // -----------------
 
@@ -147,6 +175,17 @@ mod test {
         println!("AD_SMOOTH: {:?}, AD_LINEAR {:?}", ad_stencil_result, stencil_state);
 
         test_adjoint("smooth_stencil", smooth_stencil, ad_smooth_stencil_primal,
+                     State::new([0.2, 0.5, 0.6, 1.3, 2.3], None));
+    }
+
+    #[test]
+    fn test_weighted_stencil() {
+        let a = 0.8;
+        let b = 0.2;
+
+        test_adjoint("weighted_stencil",
+                     |f| weight_stencil(f, a, b),
+                     |f| weight_stencil(f, b ,a),
                      State::new([0.2, 0.5, 0.6, 1.3, 2.3], None));
     }
 
