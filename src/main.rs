@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod state;
 
 use crate::state::State;
@@ -72,12 +74,14 @@ fn smooth(left: f32, right: f32) -> f32 {
 
 // Stencil size of 1.
 fn smooth_stencil<const N: usize>(f: &mut State<N>) {
+    let mut copy = f.clone();
     // Edge case
-    f[0] = smooth(f[N - 1], f[1]);
+    copy[0] = smooth(f[N - 1], f[1]);
     for i in 1..=N-2 {
-        f[i] = smooth(f[i - 1], f[i + 1]);
+        copy[i] = smooth(f[i - 1], f[i + 1]);
     }
-    f[N - 1] = smooth(f[N - 2], f[0]);
+    copy[N - 1] = smooth(f[N - 2], f[0]);
+    *f = copy;
 }
 
 // NOTE: Same as linear weighting adjoint.
@@ -88,13 +92,18 @@ fn ad_smooth(mut left: f32, mut right: f32, mut cent: f32) -> (f32, f32 ,f32) {
     (left, right, cent)
 }
 
-fn ad_smooth_stencil<const N: usize>(f: &mut State<N>) {
+fn ad_smooth_stencil_primal<const N: usize>(f: &mut State<N>) {
+    /*
     (f[N - 2], f[0], f[N - 1]) = ad_smooth(f[N - 2], f[0], f[N - 1]);
     for i in (1..=N-2).rev() {
         (f[i - 1], f[i + 1], f[i]) = ad_smooth(f[i - 1], f[i + 1], f[i]);
     }
     (f[N - 1], f[1], f[0]) = ad_smooth(f[N - 1], f[1], f[0]);
+    */
+    /// In this case, the code forms a symmetric matrix and so the adjoint is the same as the TL.
+    smooth_stencil(f)
 }
+
 
 // -----------------
 
@@ -137,7 +146,7 @@ mod test {
 
         println!("AD_SMOOTH: {:?}, AD_LINEAR {:?}", ad_stencil_result, stencil_state);
 
-        test_adjoint("smooth_stencil", smooth_stencil, ad_smooth_stencil,
+        test_adjoint("smooth_stencil", smooth_stencil, ad_smooth_stencil_primal,
                      State::new([0.2, 0.5, 0.6, 1.3, 2.3], None));
     }
 
