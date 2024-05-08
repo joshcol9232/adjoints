@@ -25,6 +25,7 @@ fn test_adjoint<const N: usize>(func_name: &'static str,
 
     let abs_diff = (mdx_dot - mtranspose_m_dx_dot).abs();
     let relative_to_ep = (abs_diff / f32::EPSILON) as usize;
+    println!("State: {}", dx);
     println!("'{}' => {:?} {:?} : {:?}", func_name, mdx_dot, mtranspose_m_dx_dot, relative_to_ep);
         
     assert!(relative_to_ep <= TOLERANCE);
@@ -79,13 +80,15 @@ fn apply_stencil_one<const N: usize>(f: &mut State<N>, func: impl Fn(f32, f32) -
 }
 
 fn ad_apply_stencil_one<const N: usize>(f: &mut State<N>, ad_func: impl Fn(f32, f32, f32) -> (f32, f32 ,f32)) {
-    (f[N - 2], f[0], f[N - 1]) = ad_func(f[N - 2], f[0], f[N - 1]);
-    for i in (1..=N-2).rev() {
-        (f[i - 1], f[i + 1], f[i]) = ad_func(f[i - 1], f[i + 1], f[i]);
-    }
-    (f[N - 1], f[1], f[0]) = ad_func(f[N - 1], f[1], f[0]);
-}
+    let copy = f.clone();
 
+    // NOTE: Once you have done a neighbour, you're then overwriting it?
+    (f[N - 2], f[0], f[N - 1]) = ad_func(copy[N - 2], copy[0], copy[N - 1]);
+    for i in (1..=N-2).rev() {
+        (f[i - 1], f[i + 1], f[i]) = ad_func(copy[i - 1], copy[i + 1], copy[i]);
+    }
+    (f[N - 1], f[1], f[0]) = ad_func(copy[N - 1], copy[1], copy[0]);
+}
 
 // Goes around the loop, smoothing. f[i] = f[i - 1] + f[i + 1] / 2.
 fn smooth(left: f32, right: f32) -> f32 {
@@ -103,6 +106,10 @@ fn ad_smooth(mut left: f32, mut right: f32, mut cent: f32) -> (f32, f32 ,f32) {
     right = right + 0.5 * cent;
     cent = 0.0;
     (left, right, cent)
+}
+
+fn ad_smooth_stencil_lbl<const N: usize>(f: &mut State<N>) {
+    ad_apply_stencil_one(f, ad_smooth)
 }
 
 fn ad_smooth_stencil_primal<const N: usize>(f: &mut State<N>) {
@@ -172,10 +179,17 @@ mod test {
                                   Some(["r", "A", "x", "B", "y"]));
         ad_linear_weight(&mut stencil_state);
 
-        println!("AD_SMOOTH: {:?}, AD_LINEAR {:?}", ad_stencil_result, stencil_state);
+        println!("AD_SMOOTH: {:?}, AD_LINEAR {}", ad_stencil_result, stencil_state);
 
         test_adjoint("smooth_stencil", smooth_stencil, ad_smooth_stencil_primal,
                      State::new([0.2, 0.5, 0.6, 1.3, 2.3], None));
+    }
+
+    #[test]
+    fn test_lbl_stencil() {
+        test_adjoint("lbl_stencil", smooth_stencil, ad_smooth_stencil_lbl,
+                     State::new([0.2, 0.5, 0.6, 1.3, 2.3], None));
+
     }
 
     #[test]
